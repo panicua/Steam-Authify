@@ -17,10 +17,8 @@ export default function LoginPage() {
   // If the Telegram widget reloaded the page after popup auth,
   // recover the pending state and redirect immediately.
   useEffect(() => {
-    const pendingName = sessionStorage.getItem('steam_pending_name')
-    if (pendingName !== null) {
-      sessionStorage.removeItem('steam_pending_name')
-      navigate('/pending', { replace: true, state: { name: pendingName } })
+    if (sessionStorage.getItem('steam_pending_tg')) {
+      navigate('/pending', { replace: true })
     }
   }, [navigate])
 
@@ -50,14 +48,18 @@ export default function LoginPage() {
         })
         navigate('/', { replace: true })
       } else {
-        // Persist before navigating — the Telegram widget's popup flow
-        // may reload the page, so LoginPage's useEffect will recover this.
-        const name = tgUser.first_name || tgUser.username || ''
-        sessionStorage.setItem('steam_pending_name', name)
-        navigate('/pending', {
-          replace: true,
-          state: { name },
-        })
+        // Persist TG auth data so PendingPage can poll for activation.
+        // Also survives the Telegram widget's popup flow page reload.
+        sessionStorage.setItem('steam_pending_tg', JSON.stringify({
+          id: tgUser.id,
+          first_name: tgUser.first_name,
+          last_name: tgUser.last_name,
+          username: tgUser.username,
+          photo_url: tgUser.photo_url,
+          auth_date: tgUser.auth_date,
+          hash: tgUser.hash,
+        }))
+        navigate('/pending', { replace: true })
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
