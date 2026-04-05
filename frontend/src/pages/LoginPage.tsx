@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import TelegramLoginButton from '@/components/TelegramLoginButton'
@@ -13,6 +13,16 @@ export default function LoginPage() {
   const { login } = useAuth()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // If the Telegram widget reloaded the page after popup auth,
+  // recover the pending state and redirect immediately.
+  useEffect(() => {
+    const pendingName = sessionStorage.getItem('steam_pending_name')
+    if (pendingName !== null) {
+      sessionStorage.removeItem('steam_pending_name')
+      navigate('/pending', { replace: true, state: { name: pendingName } })
+    }
+  }, [navigate])
 
   const handleTelegramAuth = async (tgUser: TelegramUser) => {
     setError('')
@@ -40,9 +50,13 @@ export default function LoginPage() {
         })
         navigate('/', { replace: true })
       } else {
+        // Persist before navigating — the Telegram widget's popup flow
+        // may reload the page, so LoginPage's useEffect will recover this.
+        const name = tgUser.first_name || tgUser.username || ''
+        sessionStorage.setItem('steam_pending_name', name)
         navigate('/pending', {
           replace: true,
-          state: { name: tgUser.first_name || tgUser.username },
+          state: { name },
         })
       }
     } catch (err: unknown) {
