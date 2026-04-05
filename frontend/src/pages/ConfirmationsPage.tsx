@@ -218,11 +218,18 @@ export default function ConfirmationsPage() {
     const key = `${accountId}:${confId}`
     setActionLoading((prev) => new Set(prev).add(key))
     try {
-      if (action === 'accept') {
-        await confirmations.accept(accountId, confId)
-      } else {
-        await confirmations.decline(accountId, confId)
+      const { data } = action === 'accept'
+        ? await confirmations.accept(accountId, confId)
+        : await confirmations.decline(accountId, confId)
+
+      if (!data.success) {
+        toast.error(
+          `Steam rejected this ${action} — the account may have trade restrictions ` +
+          `(not friends long enough, limited account, market cooldown, etc.)`
+        )
+        return
       }
+
       toast.success(`Confirmation ${action === 'accept' ? 'accepted' : 'declined'}`)
       await handleRefresh()
       setSelectedIds((prev) => {
@@ -254,23 +261,35 @@ export default function ConfirmationsPage() {
       grouped[id].push(confId)
     }
 
+    let succeeded = 0
+    let failed = 0
     for (const [accIdStr, confIds] of Object.entries(grouped)) {
       try {
-        await confirmations.batch(Number(accIdStr), {
+        const { data } = await confirmations.batch(Number(accIdStr), {
           confirmation_ids: confIds,
           action,
         })
+        for (const r of data.results) {
+          if (r.success) succeeded++
+          else failed++
+        }
       } catch (err: unknown) {
         const msg =
           (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
           `Batch ${action} failed`
         toast.error(msg)
+        failed += confIds.length
       }
     }
 
-    toast.success(
-      `${selectedIds.size} confirmation(s) ${action === 'accept' ? 'accepted' : 'declined'}`
-    )
+    if (succeeded > 0) {
+      toast.success(`${succeeded} confirmation(s) ${action === 'accept' ? 'accepted' : 'declined'}`)
+    }
+    if (failed > 0) {
+      toast.error(
+        `${failed} confirmation(s) rejected by Steam — check account trade restrictions`
+      )
+    }
     setSelectedIds(new Set())
     await handleRefresh()
   }
