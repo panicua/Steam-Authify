@@ -29,11 +29,13 @@ class SteamAccountAdmin(ModelView, model=SteamAccount):
         SteamAccount.shared_secret_encrypted,
         SteamAccount.identity_secret_encrypted,
         SteamAccount.revocation_code_encrypted,
+        SteamAccount.steam_session_encrypted,
     ]
     column_details_exclude_list = [
         SteamAccount.shared_secret_encrypted,
         SteamAccount.identity_secret_encrypted,
         SteamAccount.revocation_code_encrypted,
+        SteamAccount.steam_session_encrypted,
     ]
     name = "Steam Account"
     name_plural = "Steam Accounts"
@@ -62,7 +64,7 @@ class AuditLogAdmin(ModelView, model=AuditLog):
 
 
 def setup_admin(app: FastAPI) -> Admin:
-    app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+    app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY, max_age=86400)
 
     auth_backend = AdminAuth(secret_key=settings.SECRET_KEY)
     admin = Admin(

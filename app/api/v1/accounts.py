@@ -1,15 +1,15 @@
 import base64
 import json
+import time
 
-import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import Actor, require_active_user, require_admin
-from app.config import settings
+from app.api.deps import Actor, require_active_user
 from app.core.audit import record_audit
 from app.core.limiter import limiter
+from app.core.redis import get_redis
 from app.core.security import decrypt_value, encrypt_value
 from app.database import get_session
 from app.models.steam_account import SteamAccount
@@ -23,14 +23,7 @@ from app.services.steam_guard import generate_steam_guard_code, parse_mafile, ti
 
 router = APIRouter(prefix="/accounts", tags=["steam-accounts"])
 
-_redis: aioredis.Redis | None = None
-
-
-async def _get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    return _redis
+MAX_MAFILE_SIZE = 1_048_576  # 1 MB
 
 
 def _account_to_read(account: SteamAccount) -> SteamAccountRead:
@@ -101,7 +94,12 @@ async def upload_mafile(
     session: AsyncSession = Depends(get_session),
     actor: Actor = Depends(require_active_user),
 ):
-    content = await file.read()
+    content = await file.read(MAX_MAFILE_SIZE + 1)
+    if len(content) > MAX_MAFILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum size is {MAX_MAFILE_SIZE // 1024} KB",
+        )
     try:
         data = json.loads(content)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -154,16 +152,21 @@ async def upload_mafile(
 
 @router.get("", response_model=list[SteamAccountRead])
 async def list_accounts(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
     actor: Actor = Depends(require_active_user),
 ):
     if actor.is_admin:
-        result = await session.execute(select(SteamAccount).order_by(SteamAccount.id))
+        result = await session.execute(
+            select(SteamAccount).order_by(SteamAccount.id).offset(offset).limit(limit)
+        )
     else:
         result = await session.execute(
             select(SteamAccount)
             .where(SteamAccount.user_id == actor.user_id)
             .order_by(SteamAccount.id)
+            .offset(offset).limit(limit)
         )
     return [_account_to_read(a) for a in result.scalars().all()]
 
@@ -215,8 +218,6 @@ async def get_code(
     session: AsyncSession = Depends(get_session),
     actor: Actor = Depends(require_active_user),
 ):
-    import time
-
     account = await session.get(SteamAccount, account_id)
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Account not found")
@@ -228,7 +229,7 @@ async def get_code(
     expires_in = 30 - (now % 30)
 
     # Check Redis cache
-    r = await _get_redis()
+    r = await get_redis()
     cache_key = f"steam_code:{account_id}:{time_chunk}"
     cached = await r.get(cache_key)
     if cached:

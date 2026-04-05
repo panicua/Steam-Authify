@@ -1,3 +1,7 @@
+import hmac
+import logging
+import sys
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,6 +15,8 @@ from app.core.security import generate_api_key
 from app.database import get_session
 from app.models.api_key import ApiKey
 from app.schemas.api_key import ApiKeyCreated
+
+logger = logging.getLogger("steam_auth.startup")
 
 
 def create_app() -> FastAPI:
@@ -35,8 +41,8 @@ def create_app() -> FastAPI:
             CORSMiddleware,
             allow_origins=origins,
             allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Content-Type", "Authorization", "X-API-Key"],
         )
 
     from app.api.v1.router import v1_router
@@ -44,19 +50,23 @@ def create_app() -> FastAPI:
     application.include_router(v1_router, prefix=settings.API_V1_PREFIX)
 
     # Startup validation
-    missing = []
+    critical_missing = []
     if not settings.FERNET_KEY:
-        missing.append("FERNET_KEY")
+        critical_missing.append("FERNET_KEY")
     if not settings.SECRET_KEY:
-        missing.append("SECRET_KEY")
+        critical_missing.append("SECRET_KEY")
     if not settings.ADMIN_PASSWORD:
-        missing.append("ADMIN_PASSWORD")
+        critical_missing.append("ADMIN_PASSWORD")
+    if critical_missing:
+        logger.critical(
+            "Required environment variables not set: %s. "
+            "Copy .env_example to .env and fill in the required values.",
+            ", ".join(critical_missing),
+        )
+        sys.exit(1)
+
     if not settings.TELEGRAM_BOT_TOKEN:
-        missing.append("TELEGRAM_BOT_TOKEN")
-    if missing:
-        import sys
-        print(f"FATAL: Required environment variables not set: {', '.join(missing)}", file=sys.stderr)
-        print("Copy .env_example to .env and fill in the required values.", file=sys.stderr)
+        logger.warning("TELEGRAM_BOT_TOKEN is not set. Telegram login will not work.")
 
     from app.admin.views import setup_admin
 
@@ -74,7 +84,7 @@ def create_app() -> FastAPI:
     ):
         """Create the very first API key. Only works when no keys exist yet."""
         if settings.BOOTSTRAP_TOKEN:
-            if not x_bootstrap_token or x_bootstrap_token != settings.BOOTSTRAP_TOKEN:
+            if not x_bootstrap_token or not hmac.compare_digest(x_bootstrap_token, settings.BOOTSTRAP_TOKEN):
                 raise HTTPException(
                     status.HTTP_403_FORBIDDEN,
                     detail="Invalid or missing bootstrap token",
@@ -100,6 +110,10 @@ def create_app() -> FastAPI:
             raw_key=raw_key,
             created_at=api_key.created_at,
         )
+
+    @application.get("/health", tags=["health"])
+    async def health():
+        return {"status": "ok"}
 
     return application
 

@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 
+import jwt
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_api_key
+from app.core.tokens import decode_access_token
 from app.database import get_session
 from app.models.api_key import ApiKey
 from app.models.user import User
@@ -68,17 +70,14 @@ async def get_current_actor(
         )
 
     if bearer:
-        from app.core.jwt import decode_access_token
-        import jwt as pyjwt
-
         try:
             payload = decode_access_token(bearer.credentials)
-        except pyjwt.ExpiredSignatureError:
+        except jwt.ExpiredSignatureError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has expired",
             )
-        except pyjwt.PyJWTError:
+        except jwt.PyJWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",

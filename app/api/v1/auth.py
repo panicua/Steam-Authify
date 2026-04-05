@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, get_current_actor
-from app.core.jwt import create_access_token, verify_telegram_login
+from app.core.tokens import create_access_token, verify_telegram_login
 from app.core.limiter import limiter
 from app.database import get_session
 from app.models.user import User
@@ -23,7 +23,7 @@ class TelegramLoginData(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None
     token_type: str = "bearer"
     user_id: int
     role: str
@@ -74,12 +74,19 @@ async def telegram_login(
 
     await session.commit()
 
+    if not user.is_active:
+        return AuthResponse(
+            user_id=user.id,
+            role=user.role,
+            is_active=False,
+        )
+
     token = create_access_token(user.id, user.role)
     return AuthResponse(
         access_token=token,
         user_id=user.id,
         role=user.role,
-        is_active=user.is_active,
+        is_active=True,
     )
 
 

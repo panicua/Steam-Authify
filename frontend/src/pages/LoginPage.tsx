@@ -28,20 +28,22 @@ export default function LoginPage() {
         hash: tgUser.hash,
       })
 
-      login(data.access_token, {
-        id: data.user_id,
-        username: tgUser.username || `tg_${tgUser.id}`,
-        role: data.role,
-        is_active: data.is_active,
-        telegram_username: tgUser.username,
-        telegram_first_name: tgUser.first_name,
-        telegram_photo_url: tgUser.photo_url,
-      })
-
-      if (data.is_active) {
+      if (data.is_active && data.access_token) {
+        login(data.access_token, {
+          id: data.user_id,
+          username: tgUser.username || `tg_${tgUser.id}`,
+          role: data.role,
+          is_active: data.is_active,
+          telegram_username: tgUser.username,
+          telegram_first_name: tgUser.first_name,
+          telegram_photo_url: tgUser.photo_url,
+        })
         navigate('/', { replace: true })
       } else {
-        navigate('/pending', { replace: true })
+        navigate('/pending', {
+          replace: true,
+          state: { name: tgUser.first_name || tgUser.username },
+        })
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail

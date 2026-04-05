@@ -16,6 +16,9 @@ import secrets
 from dataclasses import dataclass
 
 import httpx
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
 
 from app.services.steam_guard import generate_steam_guard_code
 
@@ -199,10 +202,6 @@ async def login(
 
 def _encrypt_password(password: str, mod_hex: str, exp_hex: str) -> str:
     """Encrypt password with Steam's RSA public key."""
-    from cryptography.hazmat.primitives.asymmetric import padding
-    from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
-    from cryptography.hazmat.backends import default_backend
-
     mod = int(mod_hex, 16)
     exp = int(exp_hex, 16)
 

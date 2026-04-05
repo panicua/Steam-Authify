@@ -1,15 +1,13 @@
 import json
-import time
 from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, require_active_user
-from app.config import settings
 from app.core.audit import record_audit
 from app.core.limiter import limiter
+from app.core.redis import get_redis
 from app.core.security import decrypt_value, encrypt_value
 from app.database import get_session
 from app.models.steam_account import SteamAccount
@@ -36,15 +34,6 @@ from app.services.steam_login import (
 )
 
 router = APIRouter(prefix="/accounts", tags=["confirmations"])
-
-_redis: aioredis.Redis | None = None
-
-
-async def _get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    return _redis
 
 
 async def _get_account_with_access(
@@ -198,7 +187,7 @@ async def get_confirmations(
     cookies = _get_session_cookies(account)
 
     # Check Redis cache
-    r = await _get_redis()
+    r = await get_redis()
     cache_key = f"confirmations:{account_id}"
     cached = await r.get(cache_key)
     if cached:
@@ -292,7 +281,7 @@ async def _handle_single_action(
     identity_secret = decrypt_value(account.identity_secret_encrypted)
 
     # Look up the nonce from cached confirmations
-    r = await _get_redis()
+    r = await get_redis()
     cache_key = f"confirmations:{account_id}"
     cached = await r.get(cache_key)
 
@@ -458,7 +447,7 @@ async def batch_action(
             results.append(ConfirmationResult(id=conf_id, success=False, error=str(e)))
 
     # Invalidate cache
-    r = await _get_redis()
+    r = await get_redis()
     await r.delete(f"confirmations:{account_id}")
     await session.commit()
 

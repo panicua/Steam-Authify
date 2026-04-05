@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -19,5 +20,5 @@ class UserRead(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    role: str | None = None
+    role: Literal["admin", "user"] | None = None
     is_active: bool | None = None
