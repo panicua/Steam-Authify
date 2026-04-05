@@ -44,6 +44,7 @@ export default function App() {
               <Route path="generate" element={<GeneratePage />} />
               <Route path="users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
             </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>
