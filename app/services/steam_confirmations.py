@@ -126,7 +126,11 @@ async def respond_to_confirmation(
             f"{STEAM_MOBILECONF_URL}/ajaxop",
             params=params,
             cookies=cookies,
-            headers={"User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": f"https://steamcommunity.com/mobileconf/details/{conf_id}",
+            },
         )
         resp.raise_for_status()
         data = resp.json()
