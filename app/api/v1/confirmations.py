@@ -44,7 +44,7 @@ async def _get_account_with_access(
     account = await session.get(SteamAccount, account_id)
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Account not found")
-    if not actor.is_admin and account.user_id != actor.user_id:
+    if account.user_id != actor.user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Access denied")
     return account
 

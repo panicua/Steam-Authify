@@ -377,32 +377,31 @@ export default function ConfirmationsPage() {
         ))}
       </div>
 
-      {/* Accounts without session — prompt to login */}
-      {tradeReadyAccounts.some((a) => !a.has_session) && (
-        <div className="mb-4">
-          {tradeReadyAccounts
-            .filter((a) => !a.has_session)
-            .map((account) => (
-              <Card key={account.id} className="mb-2">
-                <CardContent className="flex items-center justify-between py-3">
-                  <p className="text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">{account.account_name}</span> needs
-                    a Steam session to view confirmations.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => setLoginAccount(account)}
-                  >
-                    <LogIn className="h-4 w-4" />
-                    Log In
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-        </div>
-      )}
+      {/* Selected account without session — prompt to login */}
+      {(() => {
+        if (activeFilter === null) return null;
+        const selected = tradeReadyAccounts.find((a) => a.id === activeFilter);
+        if (!selected || selected.has_session) return null;
+        return (
+          <Card className="mb-4">
+            <CardContent className="flex items-center justify-between py-3">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{selected.account_name}</span> needs
+                a Steam session to view confirmations.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={() => setLoginAccount(selected)}
+              >
+                <LogIn className="h-4 w-4" />
+                Log In
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, LargeBinary, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -8,6 +8,16 @@ from app.models.base import Base, TimestampMixin
 
 class SteamAccount(TimestampMixin, Base):
     __tablename__ = "steam_accounts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_name", name="uq_steam_accounts_user_account_name"),
+        Index(
+            "uq_steam_accounts_user_steam_id",
+            "user_id",
+            "steam_id",
+            unique=True,
+            postgresql_where=text("steam_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
