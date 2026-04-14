@@ -3,7 +3,8 @@ import json
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Actor, require_active_user
@@ -40,6 +41,29 @@ def _account_to_read(account: SteamAccount) -> SteamAccountRead:
     )
 
 
+async def _check_duplicate(
+    session: AsyncSession,
+    user_id: int,
+    account_name: str,
+    steam_id: int | None,
+) -> None:
+    conditions = [SteamAccount.account_name == account_name]
+    if steam_id is not None:
+        conditions.append(SteamAccount.steam_id == steam_id)
+    existing = await session.execute(
+        select(SteamAccount.account_name).where(
+            SteamAccount.user_id == user_id,
+            or_(*conditions),
+        ).limit(1)
+    )
+    row = existing.first()
+    if row:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Account '{row[0]}' is already added",
+        )
+
+
 def _validate_shared_secret(shared_secret: str) -> None:
     try:
         decoded = base64.b64decode(shared_secret)
@@ -59,6 +83,7 @@ async def create_account(
     actor: Actor = Depends(require_active_user),
 ):
     _validate_shared_secret(data.shared_secret)
+    await _check_duplicate(session, actor.user_id, data.account_name, data.steam_id)
 
     account = SteamAccount(
         user_id=actor.user_id,
@@ -71,7 +96,14 @@ async def create_account(
         revocation_code_encrypted=encrypt_value(data.revocation_code) if data.revocation_code else None,
     )
     session.add(account)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Account '{data.account_name}' is already added",
+        )
 
     await record_audit(
         session,
@@ -121,6 +153,9 @@ async def upload_mafile(
         )
 
     _validate_shared_secret(parsed["shared_secret"])
+    await _check_duplicate(
+        session, actor.user_id, parsed["account_name"], parsed.get("steam_id")
+    )
 
     account = SteamAccount(
         user_id=actor.user_id,
@@ -133,7 +168,14 @@ async def upload_mafile(
         revocation_code_encrypted=encrypt_value(parsed["revocation_code"]) if parsed.get("revocation_code") else None,
     )
     session.add(account)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Account '{parsed['account_name']}' is already added",
+        )
 
     await record_audit(
         session,
@@ -157,17 +199,12 @@ async def list_accounts(
     session: AsyncSession = Depends(get_session),
     actor: Actor = Depends(require_active_user),
 ):
-    if actor.is_admin:
-        result = await session.execute(
-            select(SteamAccount).order_by(SteamAccount.id).offset(offset).limit(limit)
-        )
-    else:
-        result = await session.execute(
-            select(SteamAccount)
-            .where(SteamAccount.user_id == actor.user_id)
-            .order_by(SteamAccount.id)
-            .offset(offset).limit(limit)
-        )
+    result = await session.execute(
+        select(SteamAccount)
+        .where(SteamAccount.user_id == actor.user_id)
+        .order_by(SteamAccount.id)
+        .offset(offset).limit(limit)
+    )
     return [_account_to_read(a) for a in result.scalars().all()]
 
 
@@ -180,7 +217,7 @@ async def get_account(
     account = await session.get(SteamAccount, account_id)
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Account not found")
-    if not actor.is_admin and account.user_id != actor.user_id:
+    if account.user_id != actor.user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Access denied")
     return _account_to_read(account)
 
@@ -194,7 +231,7 @@ async def delete_account(
     account = await session.get(SteamAccount, account_id)
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Account not found")
-    if not actor.is_admin and account.user_id != actor.user_id:
+    if account.user_id != actor.user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     await record_audit(
@@ -221,7 +258,7 @@ async def get_code(
     account = await session.get(SteamAccount, account_id)
     if not account:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Account not found")
-    if not actor.is_admin and account.user_id != actor.user_id:
+    if account.user_id != actor.user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     now = int(time.time())
